@@ -1,0 +1,6 @@
+chrome-profile/
+output/
+sfx/
+__pycache__/
+*.pyc
+.env

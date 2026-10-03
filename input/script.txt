@@ -1,0 +1,126 @@
+GLOBAL
+
+TITLE:
+Listen Alone
+
+Characters:
+Nora: 24 years old, dark green jacket, dark jeans, long black hair tied back, carrying a small backpack and an old camera.
+Elias: Nora's older brother, 31 years old, faded blue jacket, short dark hair, seen only in old photographs and recordings.
+Unknown Man: Tall adult male, dark waterproof coat, face rarely visible.
+
+Location:
+An abandoned mountain weather station built on a cliff above a remote coastal valley. Fog, rain, old concrete buildings, rusted antennas, narrow corridors, underground rooms.
+
+Props:
+Old camera, cassette recorder, flashlight, metal key, photographs, dusty maps, damaged computer, flashlight, old generator, SD card.
+
+Style:
+Realistic cinematic mystery thriller, natural environments, grounded realism, detailed textures, atmospheric fog, realistic human movement, subtle suspense, dark neutral lighting, no supernatural elements.
+
+$$
+
+CLIP
+
+Characters:
+Nora
+
+Moment:
+Nora drives alone along a narrow mountain road toward an abandoned weather station.
+
+Vibe:
+Isolated, uneasy, mysterious.
+
+Style:
+Overcast daylight, realistic cinematic photography, cold atmosphere.
+
+Script:
+Nora had not returned to the mountain in eight years.
+The road looked exactly as she remembered it.
+Broken asphalt.
+Dead grass.
+Fog covering the valley below.
+At the top of the hill stood the old weather station where her brother Elias had disappeared without a trace.
+She had spent years believing he was dead.
+Today, someone had sent her a photograph proving otherwise.
+
+$$
+
+CLIP
+
+Characters:
+Nora
+
+Moment:
+Nora parks beside the abandoned station and examines the photograph on her phone.
+
+Vibe:
+Suspicious and tense.
+
+Style:
+Soft gray daylight, close cinematic shots.
+
+Script:
+The photograph showed the weather station entrance.
+It had been taken yesterday.
+In the corner of the image was something Nora immediately recognized.
+Her brother's old red backpack.
+The same backpack he had been carrying the night he vanished.
+There was no message with the photograph.
+Only coordinates.
+Nora looked toward the building.
+For the first time, she noticed that one of the windows was slightly open.
+
+$$
+
+CLIP
+
+Characters:
+Nora
+
+Moment:
+Nora enters the main building and searches the abandoned reception room.
+
+Vibe:
+Quiet, unsettling.
+
+Style:
+Dim natural light, realistic dust and decay.
+
+Script:
+The door opened with a long metallic groan.
+Inside, everything was covered in dust.
+Old weather charts hung from the walls.
+A broken computer sat behind the reception desk.
+Nora moved slowly through the room, listening to the building breathe in the wind.
+Then she noticed something strange.
+There were fresh footprints across the dusty floor.
+They disappeared around the corner.
+
+$$
+
+CLIP
+
+Characters:
+Nora
+
+Moment:
+Nora follows the footprints into a narrow corridor.
+
+Vibe:
+Suspenseful and investigative.
+
+Style:
+Handheld cinematic camera, weak flashlight illumination.
+
+Script:
+Nora followed the footprints with her flashlight raised.
+They passed several locked offices.
+One door had been forced open recently.
+Inside was an old storage room.
+On the floor sat a metal cassette recorder.
+Nora picked it up.
+A strip of faded tape was attached to the front.
+Written across it were three words.
+“Nora, listen alone.”
+
+
