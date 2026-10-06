@@ -1,126 +1,387 @@
 GLOBAL
 
-TITLE:
-Listen Alone
-
 Characters:
-Nora: 24 years old, dark green jacket, dark jeans, long black hair tied back, carrying a small backpack and an old camera.
-Elias: Nora's older brother, 31 years old, faded blue jacket, short dark hair, seen only in old photographs and recordings.
-Unknown Man: Tall adult male, dark waterproof coat, face rarely visible.
-
-Location:
-An abandoned mountain weather station built on a cliff above a remote coastal valley. Fog, rain, old concrete buildings, rusted antennas, narrow corridors, underground rooms.
-
-Props:
-Old camera, cassette recorder, flashlight, metal key, photographs, dusty maps, damaged computer, flashlight, old generator, SD card.
+Nadia Karim, 34, female, dark brown shoulder-length hair usually tied back, tired hazel eyes, a small scar above her left eyebrow. She wears a faded olive field jacket over a gray sweater, black work trousers, and scuffed brown boots. She carries a battered silver flashlight and a small leather notebook with a red cord. Marcus Hale, 60s, male, tall and thin, white beard, round wire glasses, long charcoal coat. He appears only in photographs and a final reveal. The Lighthouse Keeper's Daughter, a young girl around 9, pale face, long black braid, white nightgown, bare feet, seen only as a faint apparition.
 
 Style:
-Realistic cinematic mystery thriller, natural environments, grounded realism, detailed textures, atmospheric fog, realistic human movement, subtle suspense, dark neutral lighting, no supernatural elements.
+Dark photorealistic cinematic mystery, moody lighting, cold blue and sodium amber tones, heavy fog and rain, shallow depth of field, consistent realistic detail.
 
 $$
 
 CLIP
 
 Characters:
-Nora
+Nadia Karim, olive field jacket, silver flashlight in hand.
 
 Moment:
-Nora drives alone along a narrow mountain road toward an abandoned weather station.
+Nadia stands at the edge of a rocky cliff at night in heavy rain, staring at a tall abandoned lighthouse whose top lamp is glowing bright white, though the tower has been dark for forty years.
 
 Vibe:
-Isolated, uneasy, mysterious.
+mysterious and ominous
 
 Style:
-Overcast daylight, realistic cinematic photography, cold atmosphere.
+dark photorealistic cinematic mystery
 
 Script:
-Nora had not returned to the mountain in eight years.
-The road looked exactly as she remembered it.
-Broken asphalt.
-Dead grass.
-Fog covering the valley below.
-At the top of the hill stood the old weather station where her brother Elias had disappeared without a trace.
-She had spent years believing he was dead.
-Today, someone had sent her a photograph proving otherwise.
+For forty years, the Blackrock lighthouse has been dark. The power was cut, the lamp was smashed, and the keeper vanished the same night. So why was it shining now? Nadia Karim had traveled six hours through a storm to find out, because the last person to see that light was her own father.
 
 $$
 
 CLIP
 
 Characters:
-Nora
+Nadia Karim, olive field jacket, red-corded notebook.
 
 Moment:
-Nora parks beside the abandoned station and examines the photograph on her phone.
+Close-up of Nadia's hands holding her red-corded notebook open inside a parked old car, with a faded newspaper clipping taped to the page showing the lighthouse and a headline about a missing keeper. Rain streaks the windshield behind her.
 
 Vibe:
-Suspicious and tense.
+tense and reflective
 
 Style:
-Soft gray daylight, close cinematic shots.
+dark photorealistic cinematic mystery
 
 Script:
-The photograph showed the weather station entrance.
-It had been taken yesterday.
-In the corner of the image was something Nora immediately recognized.
-Her brother's old red backpack.
-The same backpack he had been carrying the night he vanished.
-There was no message with the photograph.
-Only coordinates.
-Nora looked toward the building.
-For the first time, she noticed that one of the windows was slightly open.
+Her father, a young journalist, had written one last note before he disappeared. It said only, the light answers when someone calls its name. Nadia had read that line a thousand times. Tonight, for the first time, she believed it might be literal.
 
 $$
 
 CLIP
 
 Characters:
-Nora
+Nadia Karim, olive field jacket, silver flashlight.
 
 Moment:
-Nora enters the main building and searches the abandoned reception room.
+Nadia pushes open a rusted iron gate at the base of the lighthouse, its hinges screaming. A path of wet stones leads to a heavy wooden door with a corroded brass number plate.
 
 Vibe:
-Quiet, unsettling.
+creepy and suspenseful
 
 Style:
-Dim natural light, realistic dust and decay.
+dark photorealistic cinematic mystery
 
 Script:
-The door opened with a long metallic groan.
-Inside, everything was covered in dust.
-Old weather charts hung from the walls.
-A broken computer sat behind the reception desk.
-Nora moved slowly through the room, listening to the building breathe in the wind.
-Then she noticed something strange.
-There were fresh footprints across the dusty floor.
-They disappeared around the corner.
+The gate groaned open, loud enough to wake the dead. Beyond it, a narrow path led to the lighthouse door. The padlock was already broken, and the lock lay in the mud. Someone had been here recently. Nadia swallowed her fear and stepped inside.
 
 $$
 
 CLIP
 
 Characters:
-Nora
+Nadia Karim, olive field jacket, silver flashlight.
 
 Moment:
-Nora follows the footprints into a narrow corridor.
+Inside the circular base of the lighthouse, Nadia sweeps her flashlight across a dusty room. A spiral iron staircase climbs into darkness, and a wall covered in old framed photographs of keepers hangs beside it.
 
 Vibe:
-Suspenseful and investigative.
+eerie and curious
 
 Style:
-Handheld cinematic camera, weak flashlight illumination.
+dark photorealistic cinematic mystery
 
 Script:
-Nora followed the footprints with her flashlight raised.
-They passed several locked offices.
-One door had been forced open recently.
-Inside was an old storage room.
-On the floor sat a metal cassette recorder.
-Nora picked it up.
-A strip of faded tape was attached to the front.
-Written across it were three words.
-“Nora, listen alone.”
+Dust hung in the air like smoke. The flashlight beam crawled across the room and landed on a wall of old photographs, every keeper who had ever served here. Their faces stared back with stiff, unsmiling eyes. At the end of the row, one frame was empty. Only a single nail remained.
 
+$$
 
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, notebook in hand.
+
+Moment:
+Nadia kneels on the stone floor and finds a small pocket watch half-buried in dust beneath the empty frame, its glass cracked, the hands frozen at eleven forty-seven.
+
+Vibe:
+mysterious and emotional
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Something glinted on the floor. A pocket watch, its glass cracked, its hands frozen at eleven forty-seven. She turned it over and felt her heart stop. Engraved on the back were the initials of her father. He had been here. And he had left this behind on purpose.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight.
+
+Moment:
+Nadia looks up the spiral staircase as a sudden loud mechanical clunk echoes and the dust shakes loose from the iron steps. A thin beam of white light sweeps slowly across the ceiling above her.
+
+Vibe:
+startling and tense
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Above her, metal clanked. The old machinery was waking up. A beam of light swept across the ceiling and slid slowly down the walls. The lamp was turning, and no one had touched it. Nadia gripped the watch tightly and began to climb.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight.
+
+Moment:
+High-angle shot of Nadia climbing the narrow spiral staircase, one hand gripping a rusted railing, her boots echoing on the metal steps. The stairwell winds endlessly below her into shadow.
+
+Vibe:
+claustrophobic and suspenseful
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Two hundred and twelve steps. Her footsteps rang on the iron, and each echo seemed to come back a little too late, as if someone else were climbing behind her. Halfway up, she stopped. The footsteps below her kept going for three more steps, and then they stopped too.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight. The Lighthouse Keeper's Daughter, faint white apparition.
+
+Moment:
+On a landing midway up the tower, Nadia turns and sees a small pale girl in a white nightgown standing in the shadows below her, barefoot, with a long black braid, translucent in the flashlight beam.
+
+Vibe:
+chilling and supernatural
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+She turned slowly. In the shadows below stood a little girl in a white nightgown, perfectly still, barefoot on the cold stone. Her face was pale, and her eyes were fixed on Nadia. She lifted one finger to her lips. Then she pointed upward, toward the light.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, flashlight lowered.
+
+Moment:
+Nadia stands alone on the landing, the girl vanished, the flashlight beam falling on an empty stair. A small wet handprint remains on the iron railing, slowly fading.
+
+Vibe:
+unsettling and uncertain
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+The girl was gone. Only a wet handprint remained on the railing, fading slowly in the cold air. Nadia's hands were shaking, but she understood something now. The lighthouse was not empty. It was waiting for her, and it wanted her to reach the top.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight.
+
+Moment:
+Nadia reaches the lamp room at the top of the tower and finds a massive rotating glass lens glowing white, surrounded by storm-lashed windows. A rusted brass desk sits in the corner, covered in yellowed papers.
+
+Vibe:
+awe and dread
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+At the top, the great lens turned, blazing white, throwing its beam across a black ocean. It should have been impossible. The glass had been shattered decades ago, yet here it was, whole and perfect. In the corner stood a desk piled with papers, and a single chair that was still warm.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, notebook.
+
+Moment:
+Close-up of Nadia's hands lifting a leather logbook from the brass desk. Pages of handwritten entries are spread beneath it, and one page shows a hand-drawn sketch of her own face.
+
+Vibe:
+shocking and intimate
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+The keeper's logbook lay open. The last entry was dated forty years ago, and beside the words was a drawing. It was a woman with a scar above her left eyebrow. Nadia touched her own face. The sketch was her. Beneath it, he had written, she will come when the light calls.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight. Marcus Hale in photograph.
+
+Moment:
+Nadia holds a faded photograph found beneath the logbook, showing Marcus Hale, white-bearded in a long charcoal coat, standing beside her young father on the lighthouse balcony, both smiling.
+
+Vibe:
+revealing and emotional
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Under the logbook was a photograph. Her father stood on this very balcony beside an old man with a white beard, the keeper, Marcus Hale. They were laughing like friends. The date on the back was one day before her father vanished. He had never been a stranger here. He had been trying to save someone.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket. The Lighthouse Keeper's Daughter, apparition.
+
+Moment:
+The girl in the white nightgown appears beside the glowing lens, translucent, holding out a small brass key toward Nadia. A heavy iron hatch in the floor behind her is covered in chains.
+
+Vibe:
+tense and sorrowful
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+The girl returned, standing beside the light. In her small hand was a brass key. Behind her, a trapdoor in the floor was wrapped in rusted chains. She whispered, and her voice sounded like wind through a keyhole. They locked it to protect the town. But he is still down there, and he is still alive.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, brass key in hand.
+
+Moment:
+Nadia kneels at the chained trapdoor and turns the brass key in a heavy padlock. The lock clicks open, and the chains slide off the hatch and crash to the floor.
+
+Vibe:
+suspenseful and determined
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Nadia knelt and slid the key into the lock. It turned with a loud, final click. The chains slithered to the floor and crashed against the iron. Cold air breathed up from the darkness below, and a faint sound followed it. Someone was knocking from the other side.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight.
+
+Moment:
+POV looking down through the open hatch into a narrow stone shaft, with a rusted ladder descending into pitch darkness. Nadia's flashlight beam trembles against the wet walls.
+
+Vibe:
+terrifying and suspenseful
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+The ladder dropped into blackness. The knocking grew louder, slow and steady, like a heartbeat. Nadia glanced back at the spinning light, then at the empty place where the girl had stood. She took a breath and climbed down, one cold rung at a time.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, silver flashlight. Marcus Hale, elderly, white beard, round wire glasses, long charcoal coat.
+
+Moment:
+At the bottom of the shaft, Nadia's flashlight reveals a small stone cell lit by a single candle, where Marcus Hale sits at a table, impossibly unchanged and elderly, gripping a pen above a stack of pages.
+
+Vibe:
+astonishing and haunting
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+In a tiny stone cell, a candle burned beside a table. An old man sat there with a white beard and round glasses, writing without pause. It was Marcus Hale. He looked up and smiled sadly. You are late, he said. I have been writing your father's last words for forty years.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket. Marcus Hale, elderly, white beard, round wire glasses, long charcoal coat.
+
+Moment:
+Close-up of Marcus Hale's trembling hand pushing a thick stack of pages toward Nadia across the table, while behind him the stone wall shows a faint glowing carving of a spiral that matches the lighthouse lens.
+
+Vibe:
+revelatory and emotional
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Marcus explained that the lighthouse was never just a lighthouse. It was a door. Her father had stepped through it to save the keeper's daughter, and the light had held him there ever since. Every night, the lamp burned to keep that door open. Now someone had to take his place so that he could finally come home.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket, pocket watch in hand.
+
+Moment:
+Nadia stands before the glowing spiral carving, holding her father's cracked pocket watch in one hand and pressing the other against the wall. Her face is torn between fear and love, lit by pale gold light.
+
+Vibe:
+emotional and decisive
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+Nadia looked at the watch in her hand, still stopped at eleven forty-seven. She thought of her father, lost for forty years. She thought of the little girl who had waited all that time. Then she pressed her palm against the carving and said her father's name out loud.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket. Nadia's father, young man, dark hair, brown coat, emerging from light.
+
+Moment:
+A blinding white light fills the cell as Nadia's young father, dark-haired and in a brown coat, steps out of the glowing spiral and collapses into her arms. The cracked pocket watch ticks again in her hand.
+
+Vibe:
+cathartic and overwhelming
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+The light exploded around her. A figure stumbled out of the wall, young, alive, gasping for air. Her father fell into her arms. In her hand, the watch began to tick again. Eleven forty-eight. For the first time in forty years, time was moving forward.
+
+$$
+
+CLIP
+
+Characters:
+Nadia Karim, olive field jacket. Her father, young man, brown coat. The Lighthouse Keeper's Daughter, faint apparition, now smiling.
+
+Moment:
+Wide shot at dawn on the cliff outside the lighthouse. Nadia and her father stand side by side as the tower's lamp finally goes dark, while the little girl in the white nightgown waves from the top balcony, fading into golden morning light.
+
+Vibe:
+peaceful and bittersweet
+
+Style:
+dark photorealistic cinematic mystery
+
+Script:
+By morning, the storm had passed. Up on the balcony, the little girl waved goodbye, and the great light went out for the last time. Nadia held her father's hand and watched the sun rise over the sea. The lighthouse was finally silent, but if you ever pass Blackrock at night and see a glow, you should never answer its call.

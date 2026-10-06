@@ -1,112 +1,48 @@
 from pathlib import Path
+import re
 
 
 class SFXLibrary:
-    def __init__(self, root_directory):
-        self.root_directory = Path(root_directory)
+    """Recursively index WAV SFX and rank matches using filename/path tags."""
 
-        if not self.root_directory.exists():
-            raise FileNotFoundError(
-                f"SFX directory not found:\n"
-                f"{self.root_directory.resolve()}"
-            )
+    def __init__(self, root):
+        self.root = Path(root)
+        if not self.root.exists():
+            raise FileNotFoundError(f"SFX library not found: {self.root.resolve()}")
+        self.files = self._scan()
 
-        self.refresh()
-
-    def refresh(self):
-        """
-        Scan the entire SFX library.
-
-        Folder structure does not matter.
-        Every WAV file is treated as part of one library.
-        """
-
-        self.files = sorted(
-            path
-            for path in self.root_directory.rglob("*.wav")
-            if not path.name.startswith("._")
-            and "__MACOSX" not in path.parts
-        )
-
-    def search_by_tags(self, tags, limit=30):
-        """
-        Search every audio file using the supplied tags.
-
-        A file matches when one or more tags appear
-        in its filename OR its relative path.
-
-        Results are ranked by number of matched tags.
-        """
-
-        if not tags:
-            return []
-
-        normalized_tags = [
-            self.normalize(tag)
-            for tag in tags
-            if tag and tag.strip()
-        ]
-
-        results = []
-
-        for file_path in self.files:
-
-            relative_path = file_path.relative_to(
-                self.root_directory
-            )
-
-            searchable_text = self.normalize(
-                str(relative_path)
-            )
-
-            matched_tags = []
-
-            for tag in normalized_tags:
-                if tag in searchable_text:
-                    matched_tags.append(tag)
-
-            if not matched_tags:
+    def _scan(self):
+        files = []
+        for path in self.root.rglob("*"):
+            if not path.is_file():
                 continue
-
-            results.append({
-                "path": file_path,
-                "relative_path": relative_path.as_posix(),
-                "matched_tags": matched_tags,
-                "score": len(matched_tags),
-            })
-
-        # Highest number of matched tags first.
-        results.sort(
-            key=lambda item: item["score"],
-            reverse=True,
-        )
-
-        return results[:limit]
+            if path.suffix.lower() != ".wav":
+                continue
+            if path.name.startswith("._"):
+                continue
+            if "__MACOSX" in path.parts:
+                continue
+            files.append(path)
+        return sorted(files, key=lambda p: str(p).lower())
 
     @staticmethod
-    def normalize(text):
-        """
-        Normalize filenames so variations such as:
+    def _normalize(text):
+        text = str(text).lower()
+        text = re.sub(r"[_\-.()]+", " ", text)
+        return text
 
-            church-bell
-            church_bell
-            Church Bell
+    def search_by_tags(self, tags, limit=30):
+        normalized_tags = [self._normalize(tag).strip() for tag in tags if str(tag).strip()]
+        results = []
 
-        can be searched consistently.
-        """
+        for path in self.files:
+            haystack = self._normalize(path)
+            score = 0
+            for tag in normalized_tags:
+                if tag and tag in haystack:
+                    score += 1
+            if score:
+                results.append((score, path))
 
-        text = text.lower()
-
-        for character in [
-            "_",
-            "-",
-            ".",
-        ]:
-            text = text.replace(
-                character,
-                " ",
-            )
-
-        return " ".join(
-            text.split()
-        )
+        results.sort(key=lambda item: (-item[0], str(item[1]).lower()))
+        return [path for _, path in results[:limit]]

@@ -1,409 +1,371 @@
 import json
+import shutil
+import subprocess
+import time
+from pathlib import Path
 
-from ai.ollama_sfx import OllamaSFX
+import requests
 
 
-class OllamaVideoPlanner(OllamaSFX):
-    """
-    Creates visual instructions for the entire story.
+class OllamaVideoPlanner:
+    """Generate story title and visual plans with a local Ollama server.
 
-    One Ollama request produces:
-        - camera
-        - composition
-        - motion
-        - shake
-        - transition
-        - color grade
-
-    This is intentionally done for all clips at once to
-    reduce the number of Ollama executions.
+    Camera shake is intentionally disabled at the source: the planner will
+    always return shake='none'. The renderer also enforces this independently.
     """
 
-    ALLOWED_MOTIONS = {
-        "static",
-        "zoom_in",
-        "zoom_out",
-        "push_in",
-        "pull_out",
-        "pan_left",
-        "pan_right",
-        "pan_up",
-        "pan_down",
-    }
+    def __init__(self, base_url="http://127.0.0.1:11434", model="gemma4:31b-cloud"):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.chat_url = f"{self.base_url}/api/chat"
+        self.tags_url = f"{self.base_url}/api/tags"
+        self._ensure_server()
 
-    ALLOWED_SHAKES = {
-        "none",
-        "subtle",
-        "medium",
-        "strong",
-    }
+    # ------------------------------------------------------------
+    # OLLAMA SERVER
+    # ------------------------------------------------------------
 
-    ALLOWED_TRANSITIONS = {
-        "cut",
-        "fade_black",
-        "flash_white",
-    }
+    def _ensure_server(self):
+        try:
+            response = requests.get(self.tags_url, timeout=5)
+            response.raise_for_status()
+            print("Ollama server is already running.")
+            return
+        except Exception:
+            pass
 
-    ALLOWED_GRADES = {
-        "neutral",
-        "cinematic",
-        "moody",
-        "cool",
-        "warm",
-    }
+        executable = shutil.which("ollama")
+        if executable is None:
+            common = [
+                Path(r"C:\Program Files\Ollama\ollama.exe"),
+                Path(r"C:\Users\%USERNAME%\AppData\Local\Programs\Ollama\ollama.exe"),
+            ]
+            for candidate in common:
+                candidate = Path(str(candidate).replace("%USERNAME%", Path.home().name))
+                if candidate.exists():
+                    executable = str(candidate)
+                    break
+
+        if executable is None:
+            raise RuntimeError(
+                "Ollama is not running and ollama.exe could not be found."
+            )
+
+        subprocess.Popen(
+            [executable, "serve"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            try:
+                response = requests.get(self.tags_url, timeout=3)
+                response.raise_for_status()
+                print("Ollama server started.")
+                return
+            except Exception:
+                time.sleep(1)
+
+        raise RuntimeError("Ollama server did not become available in time.")
+
+    # ------------------------------------------------------------
+    # REQUESTS
+    # ------------------------------------------------------------
+
+    @staticmethod
+    def _extract_json(text):
+        text = text.strip()
+
+        if text.startswith("```"):
+            lines = text.splitlines()
+            if lines and lines[0].startswith("```"):
+                lines = lines[1:]
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+            text = "\n".join(lines).strip()
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end > start:
+                return json.loads(text[start : end + 1])
+
+            start = text.find("[")
+            end = text.rfind("]")
+            if start != -1 and end > start:
+                return json.loads(text[start : end + 1])
+
+            raise
+
+    def _chat(self, messages, temperature=0.2, timeout=300, retries=4):
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": temperature,
+            },
+        }
+
+        last_error = None
+
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.post(
+                    self.chat_url,
+                    json=payload,
+                    timeout=timeout,
+                )
+
+                if response.status_code in {502, 503, 504}:
+                    raise requests.HTTPError(
+                        f"Temporary Ollama gateway error: {response.status_code}",
+                        response=response,
+                    )
+
+                response.raise_for_status()
+                data = response.json()
+                return data["message"]["content"]
+
+            except Exception as exc:
+                last_error = exc
+                if attempt >= retries:
+                    break
+                wait = min(2 ** (attempt - 1), 8)
+                print(
+                    f"Ollama request failed ({attempt}/{retries}): {exc}. "
+                    f"Retrying in {wait}s..."
+                )
+                time.sleep(wait)
+
+        raise RuntimeError(f"Ollama request failed: {last_error}")
+
+    # ------------------------------------------------------------
+    # TITLE
+    # ------------------------------------------------------------
+
     def generate_title(self, clips):
-        """
-        Generate a short cinematic title for the entire story.
-        """
-
-        story_parts = []
-
-        for clip in clips:
-
-            story_parts.append(
-                f"""
-    CLIP {clip.id}
-
-    Moment:
-    {clip.moment}
-
-    Vibe:
-    {clip.vibe}
-
-    Script:
-    {clip.script}
-    """.strip()
-            )
-
         story_text = "\n\n".join(
-            story_parts
+            f"Clip {clip.id}: {clip.moment}\nNarration: {clip.script}"
+            for clip in clips
         )
 
-        system_prompt = """
-    You are a professional film title writer.
+        prompt = f"""
+Generate one short cinematic title for this story.
 
-    Generate ONE original title for the story.
+Requirements:
+- 2 to 8 words.
+- Memorable.
+- Specific to the story.
+- No quotation marks.
+- No subtitle.
+- No emojis.
+- Return JSON only.
 
-    Rules:
-    - The title must match the story.
-    - Keep it short.
-    - Prefer 2 to 6 words.
-    - Make it memorable and cinematic.
-    - Do not use quotation marks.
-    - Do not add explanations.
-    - Do not add "Title:".
-    - Return JSON only.
-    - Do not use Markdown.
+JSON format:
+{{
+  "title": "..."
+}}
 
-    Required format:
+Story:
+{story_text}
+""".strip()
 
-    {
-        "title": "Your Title"
-    }
-    """
-
-        user_prompt = f"""
-    Create a cinematic title for this complete story:
-
-    {story_text}
-    """
-
-        content = self._chat(
-            system_prompt,
-            user_prompt,
+        raw = self._chat(
+            [
+                {
+                    "role": "system",
+                    "content": "You are a professional film title writer. Return valid JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.5,
         )
 
-        data = self._parse_json_response(
-            content
-        )
+        data = self._extract_json(raw)
+        title = str(data.get("title", "")).strip()
+        return title or "Untitled"
 
-        title = data.get(
-            "title",
-            ""
-        )
+    # ------------------------------------------------------------
+    # VISUAL PLAN
+    # ------------------------------------------------------------
 
-        if not isinstance(
-            title,
-            str,
-        ):
-            raise RuntimeError(
-                "Ollama generated an invalid title."
-            )
-
-        title = title.strip()
-
-        if not title:
-            raise RuntimeError(
-                "Ollama returned an empty title."
-            )
-
-        return title
     def plan_clips(self, clips):
-
-        clips_text = []
-
+        clip_payload = []
         for clip in clips:
-
-            clips_text.append(
-                f"""
-    CLIP {clip.id}
-
-    Characters:
-    {clip.characters}
-
-    Moment:
-    {clip.moment}
-
-    Vibe:
-    {clip.vibe}
-
-    Style:
-    {clip.style}
-
-    Script:
-    {clip.script}
-    """.strip()
-                )
-
-            story_text = "\n\n".join(
-                clips_text
-            )
-
-            system_prompt = """
-    You are the visual director for an AI cinematic video.
-
-    Analyze the entire sequence and create visual instructions
-    for every clip.
-
-    For every clip choose:
-
-    camera:
-    A concrete cinematic camera shot.
-    Examples:
-    - wide establishing shot
-    - medium shot
-    - close-up
-    - extreme close-up
-    - over-the-shoulder
-    - low-angle medium shot
-    - high-angle shot
-    - POV shot
-
-    composition:
-    Describe how the important subjects should be arranged
-    inside the frame.
-
-    motion:
-    Choose exactly ONE:
-
-    static
-    zoom_in
-    zoom_out
-    push_in
-    pull_out
-    pan_left
-    pan_right
-    pan_up
-    pan_down
-
-    shake:
-    Choose exactly ONE:
-
-    none
-    subtle
-    medium
-    strong
-
-    Use shake only for physical movement, impact, running,
-    explosions, crashes, sudden events, etc.
-
-    transition_after:
-    Choose exactly ONE:
-
-    cut
-    fade_black
-    flash_white
-
-    Choose the transition based on the relationship between
-    this clip and the next clip.
-
-    grade:
-    Choose exactly ONE:
-
-    neutral
-    cinematic
-    moody
-    cool
-    warm
-
-    Keep the visual style consistent across the story.
-
-    IMPORTANT:
-    - Do not use camera shake for normal static scenes.
-    - Do not use dramatic transitions everywhere.
-    - Do not randomly change color grades.
-    - Maintain visual continuity.
-    - Return JSON only.
-    - Do not use Markdown.
-    - Do not wrap the response in ```.
-
-    Required format:
-
-    {
-        "clips": [
-            {
-                "id": 1,
-                "camera": "medium shot",
-                "composition": "Adam on the left third...",
-                "motion": "push_in",
-                "shake": "none",
-                "transition_after": "cut",
-                "grade": "cinematic"
-            }
-        ]
-    }
-    """
-
-            user_prompt = f"""
-    Create the complete visual plan for this story.
-
-    {story_text}
-    """
-
-            content = self._chat(
-                system_prompt,
-                user_prompt,
-            )
-
-            data = self._parse_json_response(
-                content
-            )
-
-            raw_plans = data.get(
-                "clips",
-                []
-            )
-
-            if not isinstance(
-                raw_plans,
-                list,
-            ):
-                raise RuntimeError(
-                    "Ollama visual plan 'clips' "
-                    "must be a list."
-                )
-
-            plans = {}
-
-            for item in raw_plans:
-
-                if not isinstance(item, dict):
-                    continue
-
-                try:
-                    clip_id = int(
-                        item.get("id")
-                    )
-                except (
-                    TypeError,
-                    ValueError,
-                ):
-                    continue
-
-                camera = str(
-                    item.get(
-                        "camera",
-                        "medium cinematic shot",
-                    )
-                ).strip()
-
-                composition = str(
-                    item.get(
-                        "composition",
-                        "Balanced cinematic composition.",
-                    )
-                ).strip()
-
-                motion = str(
-                    item.get(
-                        "motion",
-                        "static",
-                    )
-                ).strip().lower()
-
-                shake = str(
-                    item.get(
-                        "shake",
-                        "none",
-                    )
-                ).strip().lower()
-
-                transition = str(
-                    item.get(
-                        "transition_after",
-                        "cut",
-                    )
-                ).strip().lower()
-
-                grade = str(
-                    item.get(
-                        "grade",
-                        "cinematic",
-                    )
-                ).strip().lower()
-
-                if motion not in self.ALLOWED_MOTIONS:
-                    motion = "static"
-
-                if shake not in self.ALLOWED_SHAKES:
-                    shake = "none"
-
-                if transition not in self.ALLOWED_TRANSITIONS:
-                    transition = "cut"
-
-                if grade not in self.ALLOWED_GRADES:
-                    grade = "cinematic"
-
-                plans[clip_id] = {
-                    "id": clip_id,
-                    "camera": camera,
-                    "composition": composition,
-                    "motion": motion,
-                    "shake": shake,
-                    "transition_after": transition,
-                    "grade": grade,
+            clip_payload.append(
+                {
+                    "id": clip.id,
+                    "characters": clip.characters,
+                    "moment": clip.moment,
+                    "vibe": clip.vibe,
+                    "style": clip.style,
+                    "script": clip.script,
                 }
+            )
 
-            # -----------------------------------------------------
-            # Make sure every clip received a plan.
-            # -----------------------------------------------------
+        prompt = f"""
+Create a visual editing plan for every clip below.
 
-            for clip in clips:
+Return JSON ONLY as a list.
 
-                if clip.id not in plans:
+Allowed values:
+- camera: wide cinematic shot, medium cinematic shot, close-up, extreme close-up, over-the-shoulder shot, low angle, high angle
+- composition: centered, rule of thirds, foreground framing, symmetrical, leading lines, deep composition
+- motion: static, zoom_in, zoom_out, push_in, pull_out, pan_left, pan_right, pan_up, pan_down
+- transition_after: cut, fade_black, flash_white
+- grade: neutral, cinematic, moody, cool, warm
 
-                    plans[clip.id] = {
-                        "id": clip.id,
-                        "camera": "medium cinematic shot",
-                        "composition": (
-                            "Balanced cinematic composition."
-                        ),
-                        "motion": "static",
-                        "shake": "none",
-                        "transition_after": "cut",
-                        "grade": "cinematic",
-                    }
+IMPORTANT:
+- Camera shake is completely disabled.
+- Set shake to exactly "none" for EVERY clip.
+- Do not invent any other shake value.
+- Use motion only for smooth cinematic movement, never vibration.
+- Keep character and environment continuity.
 
-            # -----------------------------------------------------
-            # Last clip should never transition into another clip.
-            # -----------------------------------------------------
+JSON item format:
+{{
+  "id": 1,
+  "camera": "medium cinematic shot",
+  "composition": "rule of thirds",
+  "motion": "static",
+  "shake": "none",
+  "transition_after": "cut",
+  "grade": "cinematic"
+}}
 
-            if clips:
+Clips:
+{json.dumps(clip_payload, ensure_ascii=False, indent=2)}
+""".strip()
 
-                last_id = clips[-1].id
+        raw = self._chat(
+            [
+                {
+                    "role": "system",
+                    "content": "You are a cinematic video editor. Return valid JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.2,
+        )
 
-                plans[last_id][
-                    "transition_after"
-                ] = "cut"
+        data = self._extract_json(raw)
+        if not isinstance(data, list):
+            raise RuntimeError("Ollama visual plan must be a JSON list.")
 
-            return plans
+        allowed_motion = {
+            "static",
+            "zoom_in",
+            "zoom_out",
+            "push_in",
+            "pull_out",
+            "pan_left",
+            "pan_right",
+            "pan_up",
+            "pan_down",
+        }
+        allowed_transition = {"cut", "fade_black", "flash_white"}
+        allowed_grade = {"neutral", "cinematic", "moody", "cool", "warm"}
+
+        plans = {}
+        for item in data:
+            clip_id = int(item["id"])
+            motion = str(item.get("motion", "static")).strip().lower()
+            transition = str(item.get("transition_after", "cut")).strip().lower()
+            grade = str(item.get("grade", "cinematic")).strip().lower()
+
+            if motion not in allowed_motion:
+                motion = "static"
+            if transition not in allowed_transition:
+                transition = "cut"
+            if grade not in allowed_grade:
+                grade = "cinematic"
+
+            plans[clip_id] = {
+                "camera": str(item.get("camera", "medium cinematic shot")),
+                "composition": str(item.get("composition", "rule of thirds")),
+                "motion": motion,
+                # HARD DISABLED.
+                "shake": "none",
+                "transition_after": transition,
+                "grade": grade,
+            }
+
+        missing = [clip.id for clip in clips if clip.id not in plans]
+        if missing:
+            raise RuntimeError(
+                f"Ollama visual plan is missing clip IDs: {missing}"
+            )
+
+        return plans
+
+    # ------------------------------------------------------------
+    # THUMBNAIL PLAN
+    # ------------------------------------------------------------
+
+    def generate_thumbnail_plan(self, clips, title):
+        story_text = "\n\n".join(
+            f"Clip {clip.id}: {clip.moment}\n{clip.script}"
+            for clip in clips
+        )
+
+        prompt = f"""
+Create a cinematic thumbnail plan for the story below.
+
+Title: {title}
+
+Return JSON ONLY with exactly these fields:
+- subject
+- scene
+- emotion
+- camera
+- lighting
+- color_palette
+- composition
+- title_position
+
+Allowed title_position values:
+- top_left
+- top_right
+- bottom_left
+- bottom_right
+
+Story:
+{story_text}
+""".strip()
+
+        raw = self._chat(
+            [
+                {
+                    "role": "system",
+                    "content": "You are a professional cinematic thumbnail art director. Return valid JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+        )
+
+        data = self._extract_json(raw)
+        title_position = str(data.get("title_position", "top_left")).lower()
+        if title_position not in {
+            "top_left",
+            "top_right",
+            "bottom_left",
+            "bottom_right",
+        }:
+            title_position = "top_left"
+
+        return {
+            "subject": str(data.get("subject", "Main character")),
+            "scene": str(data.get("scene", "A dramatic cinematic scene")),
+            "emotion": str(data.get("emotion", "mystery")),
+            "camera": str(data.get("camera", "Wide cinematic shot")),
+            "lighting": str(data.get("lighting", "dramatic cinematic lighting")),
+            "color_palette": str(data.get("color_palette", "deep cinematic tones")),
+            "composition": str(data.get("composition", "strong foreground/background separation")),
+            "title_position": title_position,
+        }
