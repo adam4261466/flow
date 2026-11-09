@@ -558,6 +558,30 @@ class ThumbnailCreator:
             )
 
         # -----------------------------------------------------
+        # Professional polish: subtle vignette
+        # -----------------------------------------------------
+
+        vignette = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        vignette_draw = ImageDraw.Draw(vignette)
+
+        for y in range(self.height):
+            # Radial vignette from center
+            center_x, center_y = self.width // 2, self.height // 2
+            dist = ((y - center_y) ** 2) ** 0.5
+            max_dist = (center_y ** 2 + center_x ** 2) ** 0.5
+            progress = min(dist / max_dist, 1.0)
+            alpha = int(40 * progress)
+            vignette_draw.line(
+                (0, y, self.width, y),
+                fill=(0, 0, 0, alpha),
+            )
+
+        image = Image.alpha_composite(
+            image.convert("RGBA"),
+            vignette,
+        )
+
+        # -----------------------------------------------------
         # Save
         # -----------------------------------------------------
 

@@ -1,4 +1,4 @@
-from audio.voicebox import Voicebox
+from audio.chatterbox_tts import ChatterboxTTS
 
 
 TEXT = """
@@ -13,11 +13,9 @@ Then, suddenly, someone knocked on the door.
 
 def main():
 
-    voicebox = Voicebox(
-        profile="test1"
-    )
+    tts = ChatterboxTTS()
 
-    voicebox.generate_to_file(
+    tts.generate_to_file(
         text=TEXT,
         output_file="output/test_story.wav"
     )

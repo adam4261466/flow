@@ -1,6 +1,10 @@
 chrome-profile/
 output/
-sfx/
+outbox/
+input/batch/
 __pycache__/
 *.pyc
 .env
+batch_state.json
+production.json
+factory_state.json

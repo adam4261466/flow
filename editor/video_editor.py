@@ -2,6 +2,7 @@ from pathlib import Path
 import math
 import shutil
 import subprocess
+import wave
 
 import imageio_ffmpeg
 from PIL import Image, ImageDraw, ImageFont
@@ -14,7 +15,6 @@ class VideoEditor:
     - No camera shake/vibration.
     - Camera motion is smooth and deterministic.
     - Narration is cleaned and limited before encoding.
-    - SFX is attenuated and limited.
     - Intro/outro contain silent stereo audio, matching clip streams.
     - Final assembly uses FFmpeg's concat filter, NOT stream-copy concat.
       This avoids the intro being stretched over the whole final timeline.
@@ -39,12 +39,10 @@ class VideoEditor:
         self,
         image_directory,
         audio_directory,
-        sfx_directory,
         output_directory,
     ):
         self.image_directory = Path(image_directory)
         self.audio_directory = Path(audio_directory)
-        self.sfx_directory = Path(sfx_directory)
         self.output_directory = Path(output_directory)
         self.output_directory.mkdir(parents=True, exist_ok=True)
 
@@ -64,6 +62,31 @@ class VideoEditor:
         subprocess.run(cmd, check=True)
 
     def _duration(self, path):
+        """Return the real media duration in seconds.
+
+        Chatterbox produces WAV narration, so inspect its frame count directly.
+        This works even when ffprobe is not installed or is missing from PATH.
+        Never silently fall back to 5 seconds: that was trimming longer speech.
+        """
+        path = Path(path)
+        if not path.is_file():
+            raise FileNotFoundError(f"Audio file not found: {path}")
+
+        # WAV-native duration detection; no external executable required.
+        try:
+            with wave.open(str(path), "rb") as wav_file:
+                frame_count = wav_file.getnframes()
+                sample_rate = wav_file.getframerate()
+
+                if frame_count > 0 and sample_rate > 0:
+                    duration = frame_count / float(sample_rate)
+                    if math.isfinite(duration) and duration > 0:
+                        return duration
+        except (wave.Error, EOFError, OSError):
+            # The file may be another format or a WAV variant unsupported by
+            # Python's wave module. Try ffprobe below if available.
+            pass
+
         if self.ffprobe:
             cmd = [
                 self.ffprobe,
@@ -77,12 +100,20 @@ class VideoEditor:
                 check=True,
                 capture_output=True,
                 text=True,
+                timeout=30,
             )
             value = result.stdout.strip()
             if value:
-                return max(0.05, float(value))
+                duration = float(value)
+                if math.isfinite(duration) and duration > 0:
+                    return duration
 
-        return 5.0
+        raise RuntimeError(
+            f"Could not determine the real duration of '{path}'. "
+            "For non-WAV audio, install ffprobe and make sure it is on PATH. "
+            "The renderer will not assume 5 seconds because doing so can cut "
+            "off the narration."
+        )
 
     # ------------------------------------------------------------
     # IMAGE / MOTION
@@ -109,8 +140,9 @@ class VideoEditor:
         shake = "none"
         _ = shake
 
-        # Only monotonic/one-direction motion is used (no sin/cos),
-        # so the camera never looks like it is vibrating.
+        # The old implementation used sin()/cos() crop movement for zooms.
+        # That can visually look like vibration because the camera moves forward
+        # and then backward. We use only monotonic/one-direction motion now.
         overscan = 1.12 if motion != "static" else 1.0
         scaled_w = int(math.ceil(width * overscan / 2) * 2)
         scaled_h = int(math.ceil(height * overscan / 2) * 2)
@@ -123,11 +155,12 @@ class VideoEditor:
             ]
 
         elif motion in {"zoom_in", "push_in"}:
-            # Smooth monotonic zoom: scale grows from 1.00 to about 1.08.
-            # eval=frame is REQUIRED because the expression uses t.
+            # Smooth monotonic zoom: scale grows from 1.00 to about 1.10.
+            # eval=frame is REQUIRED: the expression uses t, and scale's
+            # default eval mode is init, which rejects frame variables.
             video_filter = [
-                f"scale=w='ceil({scaled_w}*(1+0.08*t/max(0.1,{duration:.6f}))/2)*2':"
-                f"h='ceil({scaled_h}*(1+0.08*t/max(0.1,{duration:.6f}))/2)*2':"
+                f"scale=w='ceil({scaled_w}*(1+0.08*t/max(0.1,{duration:.6f})) / 2)*2':"
+                f"h='ceil({scaled_h}*(1+0.08*t/max(0.1,{duration:.6f})) / 2)*2':"
                 "eval=frame:"
                 "force_original_aspect_ratio=increase",
                 f"crop={width}:{height}:x='(iw-ow)/2':y='(ih-oh)/2'",
@@ -136,10 +169,10 @@ class VideoEditor:
 
         elif motion in {"zoom_out", "pull_out"}:
             # Smooth monotonic zoom-out.
-            # eval=frame is REQUIRED because the expression uses t.
+            # eval=frame is REQUIRED for the same reason as zoom_in.
             video_filter = [
-                f"scale=w='ceil({scaled_w}*(1.08-0.08*t/max(0.1,{duration:.6f}))/2)*2':"
-                f"h='ceil({scaled_h}*(1.08-0.08*t/max(0.1,{duration:.6f}))/2)*2':"
+                f"scale=w='ceil({scaled_w}*(1.08-0.08*t/max(0.1,{duration:.6f})) / 2)*2':"
+                f"h='ceil({scaled_h}*(1.08-0.08*t/max(0.1,{duration:.6f})) / 2)*2':"
                 "eval=frame:"
                 "force_original_aspect_ratio=increase",
                 f"crop={width}:{height}:x='(iw-ow)/2':y='(ih-oh)/2'",
@@ -224,59 +257,17 @@ class VideoEditor:
     # AUDIO
     # ------------------------------------------------------------
 
-    def _build_audio_filter(
-        self,
-        duration,
-        has_sfx,
-        sfx_start,
-        sfx_volume,
-    ):
-        # Clean narration.
-        voice = (
+    def _build_audio_filter(self):
+        return (
             "[1:a]"
             "aresample=48000:async=1:first_pts=0,"
             "highpass=f=65,"
             "acompressor=threshold=-19dB:ratio=2.4:attack=15:release=140:makeup=1.0,"
-            "alimiter=limit=0.88:level=disabled"
-            "[voice]"
-        )
-
-        if not has_sfx:
-            return (
-                voice
-                + ";"
-                "[voice]"
-                "aresample=48000,"
-                "volume=0.95,"
-                "alimiter=limit=0.90:level=disabled"
-                "[aout]"
-            )
-
-        delay_ms = max(0, int(duration * sfx_start * 1000))
-        safe_sfx_volume = max(0.0, min(float(sfx_volume), 0.20))
-
-        sfx = (
-            "[2:a]"
-            "aresample=48000:async=1:first_pts=0,"
-            f"volume={safe_sfx_volume:.4f},"
-            "highpass=f=50,"
-            "lowpass=f=14000,"
-            "acompressor=threshold=-24dB:ratio=3:attack=10:release=100:makeup=0.5,"
-            "alimiter=limit=0.55:level=disabled,"
-            f"atrim=0:{duration:.3f},"
-            f"adelay={delay_ms}:all=1"
-            "[sfx]"
-        )
-
-        mix = (
-            "[voice][sfx]"
-            "amix=inputs=2:duration=first:dropout_transition=0:normalize=0,"
+            "alimiter=limit=0.88:level=disabled,"
             "volume=0.95,"
-            "alimiter=limit=0.88:level=disabled"
+            "alimiter=limit=0.90:level=disabled"
             "[aout]"
         )
-
-        return voice + ";" + sfx + ";" + mix
 
     # ------------------------------------------------------------
     # TITLE SCREEN
@@ -384,8 +375,6 @@ class VideoEditor:
         resolution,
         bitrate,
         fade_duration,
-        sfx_volume,
-        sfx_start_ratio,
     ):
         width, height = resolution
 
@@ -396,10 +385,6 @@ class VideoEditor:
         audio_path = (
             self.audio_directory
             / f"audio_{clip_id:03d}.wav"
-        )
-        sfx_path = (
-            self.sfx_directory
-            / f"sfx_{clip_id:03d}.wav"
         )
         output_path = (
             self.output_directory
@@ -417,7 +402,7 @@ class VideoEditor:
             )
 
         duration = self._duration(audio_path)
-        has_sfx = sfx_path.exists()
+        print(f"Narration duration detected: {duration:.2f} seconds")
 
         visual_filter = self._build_visual_filter(
             plan=plan,
@@ -428,12 +413,7 @@ class VideoEditor:
             fade_duration=fade_duration,
         )
 
-        audio_filter = self._build_audio_filter(
-            duration=duration,
-            has_sfx=has_sfx,
-            sfx_start=sfx_start_ratio,
-            sfx_volume=sfx_volume,
-        )
+        audio_filter = self._build_audio_filter()
 
         cmd = [
             self.ffmpeg,
@@ -444,12 +424,6 @@ class VideoEditor:
             "-i", str(image_path),
             "-i", str(audio_path),
         ]
-
-        if has_sfx:
-            cmd.extend([
-                "-stream_loop", "-1",
-                "-i", str(sfx_path),
-            ])
 
         cmd.extend([
             "-filter_complex",
@@ -632,6 +606,145 @@ class VideoEditor:
     # PUBLIC API
     # ------------------------------------------------------------
 
+    @staticmethod
+    def _is_fresh(output_path, *input_paths):
+        """True when ``output_path`` exists and is newer than every input."""
+        try:
+            output_mtime = output_path.stat().st_mtime
+        except OSError:
+            return False
+
+        for input_path in input_paths:
+            try:
+                if input_path.stat().st_mtime > output_mtime:
+                    return False
+            except OSError:
+                return False
+
+        return True
+
+    # ------------------------------------------------------------
+    # PARALLEL-STAGE API
+    # ------------------------------------------------------------
+    #
+    # ``create_final_video`` renders every clip and then assembles the final
+    # file in one call.  The parallel orchestrator instead renders each clip
+    # as soon as its image and narration are both on disk, then assembles the
+    # final timeline once every clip exists.  These two methods expose that
+    # split without changing the behaviour of the serial entry point.
+
+    def render_clip(
+        self,
+        clip_id,
+        plan,
+        fps=30,
+        resolution=(1920, 1080),
+        bitrate="8M",
+        fade_duration=0.4,
+        reuse_existing=True,
+    ):
+        """Render one clip if needed; return its path.
+
+        Raises ``FileNotFoundError`` when the image/narration is not ready.
+        """
+        image_path = self.image_directory / f"image_{int(clip_id):03d}.png"
+        audio_path = self.audio_directory / f"audio_{int(clip_id):03d}.wav"
+        clip_path = self.output_directory / f"clip_{int(clip_id):03d}.mp4"
+
+        if not image_path.exists():
+            raise FileNotFoundError(f"Missing image: {image_path}")
+        if not audio_path.exists():
+            raise FileNotFoundError(f"Missing narration: {audio_path}")
+
+        if (
+            reuse_existing
+            and self._is_fresh(clip_path, image_path, audio_path)
+        ):
+            return clip_path
+
+        safe_plan = dict(plan or {})
+        # Hard disable camera motion/shake at the render boundary, matching
+        # create_final_video.
+        safe_plan["motion"] = "static"
+        safe_plan["shake"] = "none"
+
+        print()
+        print(f"Rendering clip {clip_id}...")
+        return self._render_clip(
+            clip_id=int(clip_id),
+            plan=safe_plan,
+            fps=fps,
+            resolution=resolution,
+            bitrate=bitrate,
+            fade_duration=fade_duration,
+        )
+
+    def assemble_final_video(
+        self,
+        title,
+        clip_paths,
+        fps=30,
+        resolution=(1920, 1080),
+        bitrate="8M",
+        intro_duration=3.0,
+        outro_duration=4.0,
+        reuse_existing=False,
+    ):
+        """Assemble intro + clips + outro into ``final_video.mp4``."""
+        clip_paths = [Path(path) for path in clip_paths]
+
+        if not clip_paths:
+            raise RuntimeError("No rendered clips to assemble.")
+
+        missing = [path for path in clip_paths if not path.exists()]
+        if missing:
+            raise FileNotFoundError(
+                "Cannot assemble final video; missing clips: "
+                + ", ".join(path.name for path in missing)
+            )
+
+        intro = self.output_directory / "intro.mp4"
+        outro = self.output_directory / "outro.mp4"
+        final = self.output_directory / "final_video.mp4"
+
+        assemble_inputs = [*clip_paths, intro, outro]
+        if reuse_existing and self._is_fresh(final, *assemble_inputs):
+            print()
+            print("Final video is already up to date, skipping assembly:")
+            print(final)
+            return final
+
+        self._create_title_video(
+            title=title,
+            output_path=intro,
+            duration=intro_duration,
+            fps=fps,
+            resolution=resolution,
+            bitrate=bitrate,
+            kind="intro",
+        )
+
+        self._create_title_video(
+            title=title,
+            output_path=outro,
+            duration=outro_duration,
+            fps=fps,
+            resolution=resolution,
+            bitrate=bitrate,
+            kind="outro",
+        )
+
+        print()
+        print("Assembling final video...")
+        print("Using FFmpeg concat filter (safe audio/video synchronization).")
+
+        return self._concat_with_filter(
+            [intro, *clip_paths, outro],
+            final,
+            fps=fps,
+            bitrate=bitrate,
+        )
+
     def create_final_video(
         self,
         plans,
@@ -640,15 +753,26 @@ class VideoEditor:
         resolution=(1920, 1080),
         bitrate="8M",
         fade_duration=0.4,
-        sfx_volume=0.15,
-        sfx_start_ratio=0.35,
         intro_duration=3.0,
         outro_duration=4.0,
+        reuse_existing=False,
     ):
-        clip_ids = sorted(
-            int(key)
-            for key in plans.keys()
-        )
+        # Plans may arrive with int keys (from OllamaVideoPlanner) or string
+        # keys (when reloaded from the saved visual_plan.json). Normalize to
+        # int keys once so lookup never raises KeyError.
+        normalized_plans = {
+            int(key): dict(value)
+            for key, value in plans.items()
+        }
+
+        # HARD DISABLE all camera motion (zoom/pan) at the render boundary.
+        # The user wants static shots only — no zoom_in, zoom_out, push_in,
+        # pull_out, pan_left, pan_right, pan_up, pan_down.
+        for _key, _plan in normalized_plans.items():
+            _plan["motion"] = "static"
+            _plan["shake"] = "none"
+
+        clip_ids = sorted(normalized_plans)
 
         if not clip_ids:
             raise RuntimeError(
@@ -658,10 +782,35 @@ class VideoEditor:
         rendered_clips = []
 
         for clip_id in clip_ids:
-            plan = dict(plans[clip_id])
+            plan = normalized_plans[clip_id]
 
             # HARD DISABLE SHAKE/VIBRATION at final render boundary.
             plan["shake"] = "none"
+
+            image_path = (
+                self.image_directory
+                / f"image_{clip_id:03d}.png"
+            )
+            audio_path = (
+                self.audio_directory
+                / f"audio_{clip_id:03d}.wav"
+            )
+            clip_path = (
+                self.output_directory
+                / f"clip_{clip_id:03d}.mp4"
+            )
+
+            if (
+                reuse_existing
+                and self._is_fresh(clip_path, image_path, audio_path)
+            ):
+                print()
+                print(
+                    f"Clip {clip_id} is already up to date, skipping render:"
+                )
+                print(clip_path)
+                rendered_clips.append(clip_path)
+                continue
 
             print()
             print(f"Rendering clip {clip_id}...")
@@ -673,8 +822,6 @@ class VideoEditor:
                 resolution=resolution,
                 bitrate=bitrate,
                 fade_duration=fade_duration,
-                sfx_volume=sfx_volume,
-                sfx_start_ratio=sfx_start_ratio,
             )
 
             rendered_clips.append(rendered)
@@ -682,6 +829,18 @@ class VideoEditor:
         intro = self.output_directory / "intro.mp4"
         outro = self.output_directory / "outro.mp4"
         final = self.output_directory / "final_video.mp4"
+
+        # In recap/resume mode, do not rebuild intro/outro/final when every
+        # piece is already present and newer than the clips it was built from.
+        assemble_inputs = [*rendered_clips, intro, outro]
+        if (
+            reuse_existing
+            and self._is_fresh(final, *assemble_inputs)
+        ):
+            print()
+            print("Final video is already up to date, skipping assembly:")
+            print(final)
+            return final
 
         self._create_title_video(
             title=title,

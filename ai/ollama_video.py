@@ -7,6 +7,63 @@ from pathlib import Path
 import requests
 
 
+def ensure_ollama_running(
+    base_url="http://127.0.0.1:11434",
+    log=print,
+):
+    """Make sure the local Ollama server is up.
+
+    Returns True when the server was already running, False when it had to be
+    started.  ``log`` is injectable so the GUI can route the messages into its
+    log panel instead of relying on global stdout redirection.
+    """
+    tags_url = f"{base_url.rstrip('/')}/api/tags"
+
+    try:
+        response = requests.get(tags_url, timeout=5)
+        response.raise_for_status()
+        log("Ollama server is already running.")
+        return True
+    except Exception:
+        pass
+
+    executable = shutil.which("ollama")
+    if executable is None:
+        common = [
+            Path(r"C:\Program Files\Ollama\ollama.exe"),
+            Path(r"C:\Users\%USERNAME%\AppData\Local\Programs\Ollama\ollama.exe"),
+        ]
+        for candidate in common:
+            candidate = Path(str(candidate).replace("%USERNAME%", Path.home().name))
+            if candidate.exists():
+                executable = str(candidate)
+                break
+
+    if executable is None:
+        raise RuntimeError(
+            "Ollama is not running and ollama.exe could not be found."
+        )
+
+    subprocess.Popen(
+        [executable, "serve"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+    deadline = time.time() + 30
+    while time.time() < deadline:
+        try:
+            response = requests.get(tags_url, timeout=3)
+            response.raise_for_status()
+            log("Ollama server started.")
+            return False
+        except Exception:
+            time.sleep(1)
+
+    raise RuntimeError("Ollama server did not become available in time.")
+
+
 class OllamaVideoPlanner:
     """Generate story title and visual plans with a local Ollama server.
 
@@ -26,49 +83,7 @@ class OllamaVideoPlanner:
     # ------------------------------------------------------------
 
     def _ensure_server(self):
-        try:
-            response = requests.get(self.tags_url, timeout=5)
-            response.raise_for_status()
-            print("Ollama server is already running.")
-            return
-        except Exception:
-            pass
-
-        executable = shutil.which("ollama")
-        if executable is None:
-            common = [
-                Path(r"C:\Program Files\Ollama\ollama.exe"),
-                Path(r"C:\Users\%USERNAME%\AppData\Local\Programs\Ollama\ollama.exe"),
-            ]
-            for candidate in common:
-                candidate = Path(str(candidate).replace("%USERNAME%", Path.home().name))
-                if candidate.exists():
-                    executable = str(candidate)
-                    break
-
-        if executable is None:
-            raise RuntimeError(
-                "Ollama is not running and ollama.exe could not be found."
-            )
-
-        subprocess.Popen(
-            [executable, "serve"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-        )
-
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            try:
-                response = requests.get(self.tags_url, timeout=3)
-                response.raise_for_status()
-                print("Ollama server started.")
-                return
-            except Exception:
-                time.sleep(1)
-
-        raise RuntimeError("Ollama server did not become available in time.")
+        return ensure_ollama_running(self.base_url)
 
     # ------------------------------------------------------------
     # REQUESTS
@@ -327,6 +342,11 @@ Return JSON ONLY with exactly these fields:
 - color_palette
 - composition
 - title_position
+- reference_clip
+
+reference_clip must be the integer id of the ONE clip whose image should be
+used as the visual reference for the thumbnail (the clip that best shows the
+thumbnail subject and main character).
 
 Allowed title_position values:
 - top_left
@@ -359,6 +379,14 @@ Story:
         }:
             title_position = "top_left"
 
+        valid_clip_ids = {clip.id for clip in clips}
+        try:
+            reference_clip = int(data.get("reference_clip", 1))
+        except (TypeError, ValueError):
+            reference_clip = 1
+        if reference_clip not in valid_clip_ids:
+            reference_clip = sorted(valid_clip_ids)[0] if valid_clip_ids else 1
+
         return {
             "subject": str(data.get("subject", "Main character")),
             "scene": str(data.get("scene", "A dramatic cinematic scene")),
@@ -368,4 +396,53 @@ Story:
             "color_palette": str(data.get("color_palette", "deep cinematic tones")),
             "composition": str(data.get("composition", "strong foreground/background separation")),
             "title_position": title_position,
+            "reference_clip": reference_clip,
         }
+
+    # ------------------------------------------------------------
+    # DESCRIPTION
+    # ------------------------------------------------------------
+
+    def generate_description(self, clips, title):
+        """Generate a compelling video description for YouTube/social media."""
+        story_text = "\n\n".join(
+            f"Clip {clip.id}: {clip.moment}\n{clip.script}"
+            for clip in clips
+        )
+
+        prompt = f"""
+Create a professional video description for this story.
+
+Title: {title}
+
+Requirements:
+- 2-3 paragraphs, engaging and cinematic
+- Hook the viewer in the first sentence
+- Include key story elements without major spoilers
+- End with a subtle call-to-action (e.g., "Watch to discover...")
+- No markdown, no bullet points, no emojis
+- Return JSON only
+
+JSON format:
+{{
+  "description": "..."
+}}
+
+Story:
+{story_text}
+""".strip()
+
+        raw = self._chat(
+            [
+                {
+                    "role": "system",
+                    "content": "You are a professional video description writer for cinematic storytelling. Return valid JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.5,
+        )
+
+        data = self._extract_json(raw)
+        description = str(data.get("description", "")).strip()
+        return description or ""

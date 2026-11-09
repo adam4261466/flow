@@ -1,5 +1,6 @@
 from models.clip import Clip
 
+import re
 
 FIELD_NAMES = [
     "Characters",
@@ -42,41 +43,32 @@ def extract_field(section, field_name):
     returns:
         Adam
     """
+    pattern = r"(?m)^[ \t]*" + re.escape(field_name) + r"[ \t]*:"
+    match = re.search(pattern, section)
 
-    marker = field_name + ":"
-
-    if marker not in section:
-        return ""
-
-    content = section.split(
-        marker,
-        1,
-    )[1]
-
-    positions = []
-
-    for field in FIELD_NAMES:
-
-        other_marker = field + ":"
-
-        if other_marker == marker:
-            continue
-
-        position = content.find(
-            other_marker
-        )
-
-        if position != -1:
-            positions.append(
-                position
-            )
-
-    if positions:
-
-        content = content[
-            :min(positions)
+    # Fallback: old behaviour (flattened text)
+    if not match:
+        marker = field_name + ":"
+        if marker not in section:
+            return ""
+        content = section.split(marker, 1)[1]
+        positions = [
+            content.find(f + ":")
+            for f in FIELD_NAMES
+            if f != field_name and content.find(f + ":") != -1
         ]
+        return (content[:min(positions)] if positions else content).strip()
 
+    content = section[match.end():]
+    next_pos = [
+        m.start()
+        for f in FIELD_NAMES
+        if f != field_name
+        for m in [re.search(r"(?m)^[ \t]*" + re.escape(f) + r"[ \t]*:", content)]
+        if m
+    ]
+    if next_pos:
+        content = content[:min(next_pos)]
     return content.strip()
 
 def extract_title(text):

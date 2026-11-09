@@ -16,10 +16,6 @@ AUDIO_DIRECTORY = (
     f"{STORY_OUTPUT}/audio"
 )
 
-SFX_DIRECTORY = (
-    f"{STORY_OUTPUT}/sfx"
-)
-
 VIDEO_DIRECTORY = (
     f"{STORY_OUTPUT}/video"
 )
@@ -75,7 +71,6 @@ def main():
     editor = VideoEditor(
         image_directory=IMAGE_DIRECTORY,
         audio_directory=AUDIO_DIRECTORY,
-        sfx_directory=SFX_DIRECTORY,
         output_directory=VIDEO_DIRECTORY,
     )
 
@@ -94,10 +89,6 @@ def main():
         bitrate="8M",
 
         fade_duration=0.4,
-
-        sfx_volume=0.30,
-
-        sfx_start_ratio=0.35,
 
         intro_duration=3.0,
 
