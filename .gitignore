@@ -8,3 +8,5 @@ __pycache__/
 batch_state.json
 production.json
 factory_state.json
+utils/factory_status.json
+dashboard_settings.json

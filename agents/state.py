@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -110,12 +111,24 @@ class ProductionState:
                 if isinstance(value, list) and len(value) > MAX_LOG_ENTRIES:
                     self.data[key] = value[-MAX_LOG_ENTRIES:]
 
-            temporary = self.path.with_suffix(".json.tmp")
+            temporary = self.path.with_suffix(
+                f".{os.getpid()}.{threading.get_ident()}.tmp"
+            )
             temporary.write_text(
                 json.dumps(self.data, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            os.replace(temporary, self.path)
+            for attempt in range(5):
+                try:
+                    os.replace(temporary, self.path)
+                    break
+                except PermissionError:
+                    # Windows briefly locks the destination when another
+                    # process (e.g. a parallel stage) is reading it.
+                    if attempt == 4:
+                        temporary.unlink(missing_ok=True)
+                        raise
+                    time.sleep(0.05 * (attempt + 1))
 
     def set_stage(self, stage: str) -> None:
         with self._lock:

@@ -133,6 +133,30 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--images-only",
+        action="store_true",
+        help=(
+            "Only generate missing clip images and the thumbnail, then exit. "
+            "The stage-parallel factory runs this independently of voices."
+        ),
+    )
+    parser.add_argument(
+        "--clips-only",
+        action="store_true",
+        help=(
+            "Only render video clips whose image and narration already exist, "
+            "then exit. The stage-parallel factory runs this independently."
+        ),
+    )
+    parser.add_argument(
+        "--final-only",
+        action="store_true",
+        help=(
+            "Only assemble the final video from finished clips, then exit. "
+            "The stage-parallel factory runs this after every clip exists."
+        ),
+    )
+    parser.add_argument(
         "--kids",
         action="store_true",
         help=(
@@ -316,6 +340,9 @@ RECAP_MISSING = False
 FORCE_THUMBNAIL = False
 THUMBNAIL_ONLY = False
 VOICES_ONLY = False
+IMAGES_ONLY = False
+CLIPS_ONLY = False
+FINAL_ONLY = False
 
 # KIDS_MODE is set by --kids. It swaps the image and thumbnail art direction
 # for bright, child-friendly storybook illustration. The story text itself is
@@ -1828,13 +1855,16 @@ def main():
     global TITLE_FILE, CHECKPOINT_FILE, GEMINI_CONVERSATION_FILE
     global PRE_SELECTED_AFTER_FINISH, RECAP_MISSING, RESUME_EXISTING
     global FORCE_THUMBNAIL, THUMBNAIL_ONLY, KIDS_MODE
-    global VOICES_ONLY
+    global VOICES_ONLY, IMAGES_ONLY, CLIPS_ONLY, FINAL_ONLY
 
     RECAP_MISSING = bool(getattr(args, "recap", False))
     FORCE_THUMBNAIL = bool(getattr(args, "regenerate_thumbnail", False))
     THUMBNAIL_ONLY = bool(getattr(args, "thumbnail_only", False))
     KIDS_MODE = bool(getattr(args, "kids", False))
     VOICES_ONLY = bool(getattr(args, "voices_only", False))
+    IMAGES_ONLY = bool(getattr(args, "images_only", False))
+    CLIPS_ONLY = bool(getattr(args, "clips_only", False))
+    FINAL_ONLY = bool(getattr(args, "final_only", False))
 
     # A recap is a repair pass: it must never overwrite assets that already
     # exist, even if the user left the "Resume existing" checkbox unchecked.
@@ -2184,6 +2214,62 @@ def main():
     )
 
     # ========================================================
+    # IMAGES-ONLY PASS
+    # ========================================================
+
+    if IMAGES_ONLY:
+        print()
+        print("========================================")
+        print("IMAGE-ONLY PASS")
+        print("========================================")
+
+        gemini_blocked, gemini_limit_message = (
+            generate_images_and_thumbnail(
+                clips,
+                visual_plans,
+                title,
+                thumbnail_plan,
+                story_text=script_text,
+            )
+        )
+
+        save_checkpoint(
+            clips,
+            stage="images",
+            blocked=gemini_blocked,
+            limit_message=gemini_limit_message,
+        )
+
+        if gemini_blocked:
+            # Record the cooldown in the shared ledger so the batch scheduler
+            # stays quiet and resumes exactly when Gemini resets.
+            from agents.limits import LimitLedger, parse_reset_minutes
+
+            cooldown = getattr(args, "gemini_cooldown_minutes", None)
+            if cooldown is None:
+                cooldown = 60.0
+            minutes = parse_reset_minutes(
+                gemini_limit_message or "",
+                default=float(cooldown),
+            )
+            LimitLedger(PROJECT_ROOT / "factory_state.json").block(
+                "gemini",
+                minutes,
+                gemini_limit_message or "Gemini usage limit reached",
+            )
+            raise SystemExit(2)
+
+        progress = build_progress(clips)
+        if progress["images_pending"] or not progress["thumbnail"]:
+            print()
+            print("Image-only pass is incomplete; the factory will retry it.")
+            raise SystemExit(3)
+
+        print()
+        print("Image-only pass complete.")
+        return
+
+    # ========================================================
     # SERVICES
     # ========================================================
 
@@ -2199,6 +2285,107 @@ def main():
     )
 
     print_progress(build_progress(clips))
+
+    # ========================================================
+    # CLIPS-ONLY PASS
+    # ========================================================
+
+    if CLIPS_ONLY or FINAL_ONLY:
+        editor = VideoEditor(
+            image_directory=IMAGE_OUTPUT,
+            audio_directory=AUDIO_OUTPUT,
+            output_directory=VIDEO_OUTPUT,
+        )
+
+        if CLIPS_ONLY:
+            print()
+            print("========================================")
+            print("CLIP-ONLY PASS")
+            print("========================================")
+
+            for clip in clips:
+                clip_path = VIDEO_OUTPUT / f"clip_{clip.id:03d}.mp4"
+
+                if (
+                    (RESUME_EXISTING or RECAP_MISSING)
+                    and clip_path.exists()
+                    and clip_path.stat().st_size > 0
+                ):
+                    print(f"Clip {clip.id} already exists, skipping.")
+                    continue
+
+                plan = visual_plans.get(clip.id)
+                if plan is None:
+                    print(f"No visual plan for clip {clip.id}; skipping.")
+                    continue
+
+                try:
+                    editor.render_clip(
+                        clip.id,
+                        plan,
+                        fps=VIDEO_FPS,
+                        resolution=VIDEO_RESOLUTION,
+                        bitrate=VIDEO_BITRATE,
+                        fade_duration=FADE_DURATION,
+                        reuse_existing=(RESUME_EXISTING or RECAP_MISSING),
+                    )
+                except Exception as error:  # noqa: BLE001 - one clip must not stop the stage
+                    print(f"Clip {clip.id} failed: {error}")
+
+            save_checkpoint(clips, stage="clips")
+            progress = build_progress(clips)
+
+            if progress["clips_pending"]:
+                print()
+                print(
+                    "Clip-only pass is incomplete: "
+                    + ", ".join(str(i) for i in progress["clips_pending"])
+                )
+                raise SystemExit(3)
+
+            print()
+            print("Clip-only pass complete.")
+            return
+
+        # FINAL_ONLY
+        print()
+        print("========================================")
+        print("FINAL-ONLY PASS")
+        print("========================================")
+
+        clip_paths = [
+            VIDEO_OUTPUT / f"clip_{clip.id:03d}.mp4"
+            for clip in clips
+        ]
+        missing = [
+            path
+            for path in clip_paths
+            if not (path.exists() and path.stat().st_size > 0)
+        ]
+        if missing:
+            print(
+                "Cannot assemble the final video; clips are still missing: "
+                + ", ".join(path.name for path in missing)
+            )
+            raise SystemExit(3)
+
+        final_video = editor.assemble_final_video(
+            title=title,
+            clip_paths=clip_paths,
+            fps=VIDEO_FPS,
+            resolution=VIDEO_RESOLUTION,
+            bitrate=VIDEO_BITRATE,
+            intro_duration=INTRO_DURATION,
+            outro_duration=OUTRO_DURATION,
+            reuse_existing=(RESUME_EXISTING or RECAP_MISSING),
+        )
+
+        save_checkpoint(clips, stage="complete")
+
+        print()
+        print("Final-only pass complete:")
+        print(final_video.resolve())
+        return
 
     # ========================================================
     # PHASE 1 — IMAGES (all clips first)
