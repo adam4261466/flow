@@ -128,7 +128,7 @@ def read_clip_ids(script: Path) -> list[int]:
     """Return the clip ids declared by a saved script (empty when unreadable)."""
 
     try:
-        text = Path(script).read_text(encoding="utf-8")
+        text = Path(script).read_text(encoding="utf-8-sig")
     except (OSError, UnicodeDecodeError):
         return []
 
@@ -398,6 +398,15 @@ class StageScheduler:
 
                 if result.fatal or count > self.max_stage_attempts:
                     self._finish_failed(stage, job, result)
+                    if result.fatal:
+                        # A shared resource stayed limited past the configured
+                        # wait, or the runner asked to stop.  Keeping the other
+                        # workers alive would just repeat the same wait for
+                        # every remaining story.
+                        self.log(
+                            f"[stages] {stage} asked to stop: {result.message}"
+                        )
+                        self.stop_event.set()
                 else:
                     job.retry_at[stage] = (
                         self.clock() + self.retry_seconds * max(1, count)

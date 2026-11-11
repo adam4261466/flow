@@ -11,7 +11,7 @@ from utils.console import setup_console
 
 setup_console()
 
-from parser.script_parser import parse_script
+from parser.script_parser import extract_description, extract_title, parse_script
 from utils.validator import validate_clips
 
 from ai.gemini_browser import (
@@ -19,6 +19,7 @@ from ai.gemini_browser import (
     GeminiLimitError,
     GeminiTextResponseError,
 )
+from ai.local_video import AutoVideoPlanner, LocalVideoPlanner
 from ai.ollama_video import OllamaVideoPlanner
 
 from audio.chatterbox_tts import ChatterboxTTS
@@ -170,6 +171,17 @@ def parse_args():
         help=(
             "Disable the Level-2 critic loops and use the previous "
             "generate-only pipeline."
+        ),
+    )
+    parser.add_argument(
+        "--llm-backend",
+        choices=["local", "auto", "ollama"],
+        default="local",
+        help=(
+            "Where the title, description, visual plan and thumbnail plan "
+            "come from. 'local' (default) is fully offline and needs no "
+            "Ollama or LLM. 'ollama' uses the Ollama planner. 'auto' tries "
+            "Ollama and falls back to the offline planner on failure."
         ),
     )
     parser.add_argument(
@@ -392,7 +404,7 @@ def load_script():
     with open(
         SCRIPT_PATH,
         "r",
-        encoding="utf-8",
+        encoding="utf-8-sig",
     ) as file:
         return file.read()
 
@@ -1583,10 +1595,32 @@ def generate_all_voices(clips, tts, blocked=False, limit_message=None):
     """
     AUDIO_OUTPUT.mkdir(parents=True, exist_ok=True)
 
+    total = len(clips)
+    missing = 0
+    for clip in clips:
+        audio_path = AUDIO_OUTPUT / f"audio_{clip.id:03d}.wav"
+        if not (
+            RESUME_EXISTING
+            and audio_path.exists()
+            and audio_path.stat().st_size > 0
+        ):
+            missing += 1
+
+    print()
+    print(
+        f"[voices] {total - missing} of {total} clips already have audio; "
+        f"generating {missing}."
+    )
+    if missing:
+        print(
+            "[voices] Chatterbox runs on CPU, so one clip can take "
+            "1-2 minutes. Progress is printed while it works."
+        )
+
     for clip in clips:
         print()
         print("========================================")
-        print(f"CLIP {clip.id} — VOICE")
+        print(f"CLIP {clip.id}/{total} — VOICE")
         print("========================================")
 
         audio_path = (
@@ -2049,20 +2083,39 @@ def main():
         return
 
     # ========================================================
-    # OLLAMA
+    # PLANNER (title / description / visual + thumbnail plans)
     # ========================================================
 
-    print()
-    print("Starting Ollama visual planner (auto-starting Ollama if needed)...")
+    llm_backend = getattr(args, "llm_backend", "local")
 
-    visual_planner = OllamaVideoPlanner()
+    local_planner = LocalVideoPlanner(
+        script_text=script_text,
+        kids=KIDS_MODE,
+    )
+
+    print()
+    if llm_backend == "local":
+        print("Using the offline planner (no Ollama, no LLM).")
+        visual_planner = local_planner
+    elif llm_backend == "auto":
+        print("Starting Ollama visual planner (falls back to offline)...")
+        try:
+            primary_planner = OllamaVideoPlanner()
+        except Exception as error:  # noqa: BLE001 - offline is the fallback
+            print(f"Ollama unavailable ({error}); using the offline planner.")
+            visual_planner = local_planner
+        else:
+            visual_planner = AutoVideoPlanner(primary_planner, local_planner)
+    else:
+        print("Starting Ollama visual planner (auto-starting Ollama if needed)...")
+        visual_planner = OllamaVideoPlanner()
 
     # ========================================================
     # TITLE
     # ========================================================
 
     print()
-    print("Generating story title...")
+    print("Resolving story title...")
 
     title = None
 
@@ -2075,21 +2128,30 @@ def main():
             title = saved_title
             print(f"Reusing saved title: {title}")
 
+    # Claude now writes TITLE into the story script's GLOBAL section. Prefer
+    # that over any planner so the story and its title always come together.
+    script_title = extract_title(script_text).strip()
+
+    if title is None and script_title and script_title.lower() != "untitled":
+        title = script_title
+        print(f"Using title from the story script: {title}")
+
     if title is None:
         title = visual_planner.generate_title(clips)
         title = title.strip()
 
         if not title or title.lower() == "untitled":
             raise RuntimeError(
-                "Ollama failed to generate a valid story title."
+                "The planner failed to generate a valid story title."
             )
 
-        TITLE_FILE.write_text(
-            title,
-            encoding="utf-8",
-        )
+    TITLE_FILE.write_text(
+        title,
+        encoding="utf-8",
+    )
 
-    # Generate description (reuse the saved one on resume/thumbnail-only runs)
+    # Description: reuse the saved one, then prefer Claude's DESCRIPTION,
+    # then fall back to the planner.
     print()
     description = None
     if RESUME_EXISTING and DESCRIPTION_FILE.exists():
@@ -2100,14 +2162,21 @@ def main():
             description = saved_description
             print("Reusing saved description.")
 
+    script_description = extract_description(script_text).strip()
+
+    if description is None and script_description:
+        description = script_description
+        print("Using description from the story script.")
+
     if description is None:
         print("Generating video description...")
         description = visual_planner.generate_description(clips, title)
-        DESCRIPTION_FILE.write_text(
-            description,
-            encoding="utf-8",
-        )
-        print(f"Description saved to {DESCRIPTION_FILE}")
+
+    DESCRIPTION_FILE.write_text(
+        description,
+        encoding="utf-8",
+    )
+    print(f"Description saved to {DESCRIPTION_FILE}")
 
     print()
     print(f"Generated title: {title}")
@@ -2118,7 +2187,7 @@ def main():
     # ========================================================
 
     print()
-    print("Creating visual plan with Ollama...")
+    print("Creating visual plan...")
 
     visual_plans = None
 
@@ -2153,7 +2222,7 @@ def main():
         )
 
     # HARD DISABLE CAMERA SHAKE/VIBRATION.
-    # Even if Ollama or an old cached plan returns a shake value,
+    # Even if a planner or an old cached plan returns a shake value,
     # the renderer will receive only "none".
     for _clip_id, _plan in visual_plans.items():
         _plan["shake"] = "none"

@@ -83,6 +83,7 @@ def extract_title(text):
     TITLE: The Last Door
     """
 
+    text = text.lstrip("\ufeff")
     sections = text.split("$$")
 
     for section in sections:
@@ -138,9 +139,57 @@ def extract_title(text):
                 ):
                     break
 
+                if next_value.lower().startswith(
+                    "description:"
+                ):
+                    break
+
                 return next_value
 
     return "Untitled"
+
+GLOBAL_FIELD_NAMES = ["TITLE", "DESCRIPTION", "CHARACTERS", "STYLE"]
+
+
+def extract_global_field(text, field_name):
+    """Extract one field from the GLOBAL section, e.g. DESCRIPTION."""
+    for section in text.lstrip("\ufeff").split("$$"):
+        lines = section.splitlines()
+
+        if not any(line.strip().upper() == "GLOBAL" for line in lines):
+            continue
+
+        match = re.search(
+            r"(?im)^[ \t]*" + re.escape(field_name) + r"[ \t]*:[ \t]*(.*)$",
+            section,
+        )
+        if not match:
+            return ""
+
+        parts = [match.group(1).strip()]
+
+        for line in section[match.end():].splitlines():
+            stripped = line.strip()
+            upper = stripped.upper()
+
+            if any(
+                upper.startswith(name + ":")
+                for name in GLOBAL_FIELD_NAMES
+            ):
+                break
+
+            if stripped:
+                parts.append(stripped)
+
+        return "\n".join(part for part in parts if part).strip()
+
+    return ""
+
+
+def extract_description(text):
+    """Return the optional DESCRIPTION written with the story script."""
+    return extract_global_field(text, "Description")
+
 
 def parse_clip(section, clip_id):
     """

@@ -34,7 +34,10 @@ STORY_PROMPT = """You are a professional cinematic storyteller writing scripts s
 Your job is to generate a complete short cinematic story that will later be converted automatically into images, narration, sound effects, a thumbnail, and a final video.
 
 IMPORTANT:
-The video system will generate the title automatically, so DO NOT create a TITLE field.
+The script MUST start with a TITLE field inside the GLOBAL section.
+Write a short, memorable, story-specific title (2 to 8 words).
+Do not use quotation marks, subtitles or emojis in the title.
+Also write a short DESCRIPTION (2 to 3 sentences) for the video upload.
 
 Do not include subtitles, background music instructions, or editing instructions.
 
@@ -324,6 +327,12 @@ The script MUST begin exactly like this:
 
 GLOBAL
 
+TITLE:
+[2-8 word cinematic title]
+
+DESCRIPTION:
+[2-3 sentence video description]
+
 Characters:
 [global character descriptions]
 
@@ -359,13 +368,15 @@ IMPORTANT FORMATTING RULES
 
 - Do not use Markdown code fences.
 - Do not number the clips.
-- Do not add a title.
+- The TITLE and DESCRIPTION fields must be the first two fields in GLOBAL.
 - Do not add explanations.
 - Do not add commentary.
 - Do not add a summary.
 - Do not add "END".
-- Do not add extra fields.
+- Do not add any fields other than TITLE, DESCRIPTION, Characters and Style in GLOBAL.
 - Keep the field names exactly:
+  TITLE:
+  DESCRIPTION:
   Characters:
   Moment:
   Vibe:
@@ -382,6 +393,8 @@ FINAL QUALITY CHECK
 
 Before returning the script, verify that:
 
+* The TITLE is 2 to 8 words and matches this exact story.
+* The DESCRIPTION is 2 to 3 sentences and does not spoil the ending.
 * The story has a strong beginning.
 * The story has escalating tension.
 * Every clip has a clear visual moment.
@@ -640,13 +653,13 @@ def clean_claude_script(raw: str) -> str:
 
     # Normalize common Markdown that Claude may add despite instructions.
     text = re.sub(
-        r"\*\*\s*(GLOBAL|CLIP|Characters|Moment|Vibe|Style|Script)\s*:?\s*\*\*",
+        r"\*\*\s*(GLOBAL|CLIP|Title|Description|Characters|Moment|Vibe|Style|Script)\s*:?\s*\*\*",
         r"\1:",
         text,
         flags=re.IGNORECASE,
     )
     text = re.sub(
-        r"(?m)^\s*#{1,6}\s*(GLOBAL|CLIP|Characters|Moment|Vibe|Style|Script)\b\s*:?\s*$",
+        r"(?m)^\s*#{1,6}\s*(GLOBAL|CLIP|Title|Description|Characters|Moment|Vibe|Style|Script)\b\s*:?\s*$",
         r"\1",
         text,
         flags=re.IGNORECASE,
@@ -1170,20 +1183,28 @@ def generate_story_with_claude(
     *,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     attempts: int = 2,
+    label: str = "",
 ) -> str:
     """Ask Claude for a story, clean it, validate it, and return the text.
 
     Invalid formatting is retried once in a fresh conversation.  Login and
     usage-limit errors are raised immediately because retrying cannot fix them.
+
+    ``label`` (usually the story id) is only used in the log banner so a long
+    batch run does not look like it is repeating the same story over and over.
     """
     browser = ClaudeBrowser(timeout=timeout)
     last_error: Exception | None = None
+
+    header = "CLAUDE STORY GENERATION"
+    if label:
+        header = f"{header}: {label}"
 
     try:
         for attempt in range(1, attempts + 1):
             print()
             print("=" * 40)
-            print(f"CLAUDE STORY GENERATION (attempt {attempt}/{attempts})")
+            print(f"{header} (attempt {attempt}/{attempts})")
             print("=" * 40)
 
             raw = browser.generate_story(prompt)

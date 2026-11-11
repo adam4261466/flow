@@ -295,7 +295,8 @@ def ensure_script(
             return story_id, None
         try:
             script_text = generate_story_with_claude(
-                prompt=build_story_prompt(prompt, kids=kids)
+                prompt=build_story_prompt(prompt, kids=kids),
+                label=story_id,
             )
         except ClaudeLimitError as exc:
             minutes = block_on_limit(ledger, "claude", str(exc))
@@ -478,6 +479,7 @@ class FactoryStageRunner:
         no_wait: bool,
         ledger: LimitLedger,
         stop_event: threading.Event,
+        script_backlog: int = 0,
     ) -> None:
         self.kids = kids
         self.no_agents = no_agents
@@ -485,7 +487,9 @@ class FactoryStageRunner:
         self.no_wait = no_wait
         self.ledger = ledger
         self.stop_event = stop_event
+        self.script_backlog = script_backlog
         self.announced: dict = {}
+        self._scripts_started = 0
         self._story_locks: dict[str, threading.Lock] = {}
         self._story_locks_guard = threading.Lock()
 
@@ -592,14 +596,17 @@ class FactoryStageRunner:
             print("=" * 60)
 
             try:
-                result = subprocess.run(command, cwd=PROJECT_ROOT)
+                returncode = self._run_stage_command(command)
             except Exception as exc:  # noqa: BLE001 - keep other stages alive
                 return StageResult.failed(f"{type(exc).__name__}: {exc}")
 
-            if result.returncode == 0:
+            if returncode is None:
+                return StageResult.blocked_stage("factory stopped")
+
+            if returncode == 0:
                 return StageResult.success()
 
-            if result.returncode == 2:
+            if returncode == 2:
                 self.ledger.reload()
                 if stage == "images":
                     minutes = parse_reset_minutes(
@@ -623,16 +630,73 @@ class FactoryStageRunner:
                     return StageResult.blocked_stage("TTS server failure")
 
             return StageResult.failed(
-                f"{stage} stage exited with code {result.returncode}"
+                f"{stage} stage exited with code {returncode}"
             )
         finally:
             lock.release()
+
+    def _run_stage_command(self, command: list[str]) -> int | None:
+        """Run one stage subprocess, killing it when the factory is stopped.
+
+        ``subprocess.run`` blocks until the child exits, so a stop request
+        would leave the child (Gemini browser, TTS request, FFmpeg) running in
+        the background while the scheduler reports the factory as stopped.
+        Polling instead lets the stop event terminate the whole child tree.
+        """
+        process = subprocess.Popen(command, cwd=PROJECT_ROOT)
+
+        try:
+            while True:
+                try:
+                    return process.wait(timeout=1.0)
+                except subprocess.TimeoutExpired:
+                    if self.stop_event.is_set():
+                        self._terminate(process)
+                        print(
+                            "[stages] factory stopped; terminated stage "
+                            f"process {process.pid}"
+                        )
+                        return None
+        finally:
+            if process.poll() is None:
+                self._terminate(process)
+
+    @staticmethod
+    def _terminate(process: subprocess.Popen) -> None:
+        if process.poll() is not None:
+            return
+
+        try:
+            if sys.platform == "win32":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    capture_output=True,
+                )
+            else:
+                process.terminate()
+        except Exception:  # noqa: BLE001 - best effort on shutdown
+            pass
+
+        try:
+            process.wait(timeout=10)
+        except Exception:  # noqa: BLE001 - already gone or unkillable
+            pass
 
     # -- script stage ----------------------------------------------------
 
     def _run_script(self, job: StoryJob) -> StageResult:
         if job.script.exists() and job.script.stat().st_size > 0:
             return StageResult.success()
+
+        self._scripts_started += 1
+        if self.script_backlog:
+            progress = f"{self._scripts_started}/{self.script_backlog} "
+        else:
+            progress = ""
+        print(
+            f"[script] {progress}{job.story_id}: no script yet, "
+            "asking Claude..."
+        )
 
         while not self.stop_event.is_set():
             if self.no_wait:
@@ -668,7 +732,8 @@ class FactoryStageRunner:
 
             try:
                 script_text = generate_story_with_claude(
-                    prompt=build_story_prompt(job.prompt, kids=self.kids)
+                    prompt=build_story_prompt(job.prompt, kids=self.kids),
+                    label=job.story_id,
                 )
             except ClaudeLimitError as exc:
                 minutes = block_on_limit(self.ledger, "claude", str(exc))
@@ -701,10 +766,13 @@ def _build_stage_jobs(
     for prompt in pending:
         with state_lock:
             info = state.get_story(prompt)
-        story_id = info.get("story_id") or make_story_id()
-        script_file = BATCH_INPUT_DIR / f"{story_id}.txt"
-        with state_lock:
-            state.set_story(prompt, story_id, script_file)
+            story_id = info.get("story_id") or make_story_id()
+            script_file = BATCH_INPUT_DIR / f"{story_id}.txt"
+            # Only touch the state file when something is actually new.  A
+            # resume used to rewrite every entry at startup, which raced the
+            # dashboard polling batch_state.json.
+            if not info.get("story_id") or not info.get("script"):
+                state.set_story(prompt, story_id, script_file)
         jobs.append(
             StoryJob(
                 prompt=prompt,
@@ -754,6 +822,12 @@ def run_stage_parallel(
         print("No pending stories to process.")
         return {"completed": 0, "failed": 0, "pending": 0}
 
+    missing_scripts = sum(
+        1
+        for job in jobs
+        if not (job.script.exists() and job.script.stat().st_size > 0)
+    )
+
     layout = StageLayout(
         batch_input=BATCH_INPUT_DIR,
         output_root=OUTPUT_DIR,
@@ -768,6 +842,7 @@ def run_stage_parallel(
         no_wait=args.no_wait,
         ledger=ledger,
         stop_event=stop_event,
+        script_backlog=missing_scripts,
     )
 
     upload_event = threading.Event()
@@ -823,6 +898,17 @@ def run_stage_parallel(
             daemon=True,
         )
         upload_thread.start()
+
+    print()
+    print(
+        f"[stages] {len(jobs)} stories queued, "
+        f"{missing_scripts} still need a Claude script."
+    )
+    if missing_scripts:
+        print(
+            "[stages] The script worker writes them one at a time while "
+            "images, voices, clips and final run in parallel."
+        )
 
     runners = {
         "script": lambda job: runner("script", job),
@@ -880,7 +966,7 @@ def run_sequential_batch(
     """Legacy one-story-at-a-time loop (``--no-stage-parallel``)."""
     announced: dict = {}
 
-    if args.voices_first:
+    if args.voices_first is not False:
         voice_first_pass(
             state,
             kids=kids,
@@ -1023,10 +1109,12 @@ def main() -> None:
     parser.add_argument(
         "--voices-first",
         action=argparse.BooleanOptionalAction,
-        default=True,
+        default=None,
         help=(
-            "Voice every queued story in one continuous pass before rendering "
-            "(default: on). Use --no-voices-first for the old per-story order."
+            "Sequential mode only (--no-stage-parallel): voice every queued "
+            "story in one continuous pass before rendering (default: on). "
+            "Stage-parallel mode always runs voices as their own worker, so "
+            "this flag has no effect there."
         ),
     )
     parser.add_argument(
@@ -1192,6 +1280,13 @@ def main() -> None:
             "Images no longer wait for a story's video: when a story's images "
             "finish, the image worker starts the next story immediately."
         )
+        if getattr(args, "voices_first", None) is not None:
+            print()
+            print(
+                "Note: --voices-first/--no-voices-first only affects sequential "
+                "mode. In stage-parallel mode voices already run as their own "
+                "worker alongside images."
+            )
         summary = run_stage_parallel(
             state,
             args=args,

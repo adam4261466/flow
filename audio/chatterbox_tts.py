@@ -9,20 +9,27 @@ running, then wait until the model has finished loading.
 """
 
 import os
+import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 
 
 DEFAULT_SERVER_URL = "http://127.0.0.1:8004"
 
-DEFAULT_SERVER_DIR = Path(
-    r"C:\Users\kabli\OneDrive\Desktop\projects\tts"
-    r"\Chatterbox-TTS-Server-windows-easyInstallation"
-)
+# How often to print a heartbeat while a /tts request is in flight.
+PROGRESS_INTERVAL_SECONDS = 15
+
+DEFAULT_SERVER_DIR = (
+    Path(__file__).resolve().parent.parent.parent
+    / "tts"
+    / "Chatterbox-TTS-Server-windows-easyInstallation"
+)  # override with the CHATTERBOX_SERVER_DIR environment variable
 
 DEFAULT_VOICE = (
     "ElevenLabs_2026-11-03T20_43_25_Amara_-_Calm__Elegant_and_"
@@ -86,6 +93,7 @@ class ChatterboxTTS:
         self.startup_timeout = startup_timeout
         self.request_timeout = request_timeout
         self.poll_interval = poll_interval
+        self.progress_interval = PROGRESS_INTERVAL_SECONDS
 
         self.split_text = split_text
         self.chunk_size = chunk_size
@@ -128,6 +136,24 @@ class ChatterboxTTS:
             return False
 
         return "/tts" in paths
+
+    def _port_is_open(self):
+        """True when something is already listening on the server port.
+
+        A busy Chatterbox server can be slow to answer ``/openapi.json`` while
+        it is synthesizing, so this distinguishes "not started" from "busy"
+        and stops the client from launching a second server on the same port.
+        """
+
+        parsed = urlparse(self.server)
+        host = parsed.hostname or "127.0.0.1"
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+
+        try:
+            with socket.create_connection((host, port), timeout=1.0):
+                return True
+        except OSError:
+            return False
 
     def _server_python(self):
         if os.name == "nt":
@@ -202,14 +228,23 @@ class ChatterboxTTS:
         if self.is_server_running():
             return True
 
-        if not self.auto_start:
+        if self.auto_start:
+            # Only launch a new server when nothing is listening. If the port
+            # is open the server is probably just busy loading the model or
+            # synthesizing, and starting a second copy would fail on the port.
+            if not self._port_is_open():
+                self.start_server()
+            else:
+                print(
+                    "Chatterbox is already running on "
+                    f"{self.server}; waiting for it to answer."
+                )
+        else:
             raise RuntimeError(
                 "Chatterbox TTS server is not reachable at "
                 f"{self.server}. Start it with:\n"
                 f"{self.server_dir / 'win-run.bat'}"
             )
-
-        self.start_server()
 
         print(
             f"Waiting for Chatterbox TTS server at {self.server} "
@@ -306,6 +341,23 @@ class ChatterboxTTS:
 
         payload = self._build_payload(text, overrides)
 
+        # A single /tts call is synchronous and can take minutes on CPU. Print
+        # a heartbeat so a long batch does not look frozen.
+        started = time.monotonic()
+        finished = threading.Event()
+
+        def _progress():
+            while not finished.wait(self.progress_interval):
+                elapsed = int(time.monotonic() - started)
+                print(f"  Chatterbox is still synthesizing... ({elapsed}s)")
+
+        progress = threading.Thread(
+            target=_progress,
+            name="chatterbox-progress",
+            daemon=True,
+        )
+        progress.start()
+
         try:
             response = requests.post(
                 self._url("/tts"),
@@ -317,6 +369,8 @@ class ChatterboxTTS:
                 "Could not reach Chatterbox TTS server at "
                 f"{self.server}: {exc}"
             ) from exc
+        finally:
+            finished.set()
 
         if response.status_code != 200:
             try:

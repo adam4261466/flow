@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -207,6 +208,22 @@ class FullRunTests(SchedulerTestBase):
         self.assertTrue(self.layout.thumbnail("story_b").exists())
 
 
+    def test_fatal_stage_result_stops_the_factory(self):
+        a = self.job("story_a")
+        b = self.job("story_b")
+        calls: list[str] = []
+
+        def images(job):
+            calls.append(job.story_id)
+            return StageResult.failed("Gemini still limited", fatal=True)
+
+        summary = self.scheduler([a, b], runners={"images": images}).run()
+
+        self.assertEqual(summary["failed"], 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(self.failed, [calls[0]])
+
+
 class FactoryStageLockTests(SchedulerTestBase):
     def make_runner(self):
         from agents.limits import LimitLedger
@@ -246,6 +263,45 @@ class FactoryStageLockTests(SchedulerTestBase):
             lock.release()
 
         self.assertTrue(result.ok)
+
+    def test_script_stage_labels_the_claude_banner(self):
+        import contextlib
+        import io
+        from unittest import mock
+
+        import batch_generator
+
+        job = self.job("story_new", script=False)
+        runner = self.make_runner()
+        runner.script_backlog = 4
+        seen = {}
+
+        def fake(prompt=None, *, label="", **kwargs):
+            seen["label"] = label
+            return VALID_SCRIPT
+
+        buffer = io.StringIO()
+        with mock.patch.object(
+            batch_generator, "generate_story_with_claude", fake
+        ), contextlib.redirect_stdout(buffer):
+            result = runner("script", job)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(seen["label"], "story_new")
+        self.assertIn("[script] 1/4 story_new", buffer.getvalue())
+
+    def test_stop_event_terminates_the_stage_process(self):
+        runner = self.make_runner()
+        runner.stop_event.set()
+
+        started = time.monotonic()
+        code = runner._run_stage_command(
+            [sys.executable, "-c", "import time; time.sleep(30)"]
+        )
+        elapsed = time.monotonic() - started
+
+        self.assertIsNone(code)
+        self.assertLess(elapsed, 20.0)
 
 
 if __name__ == "__main__":
